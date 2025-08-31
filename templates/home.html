@@ -1,0 +1,35 @@
+{% extends 'base.html' %}
+{% block body %}
+<div class="card">
+  <h1>Weekly Skate Sign-up</h1>
+  <p class="muted">Week {{ iso_week }}, {{ iso_year }}</p>
+  <p><strong>{{ count }}</strong> / {{ quota }} signed up</p>
+
+  <form method="POST" action="{{ url_for('submit_signup') }}">
+    <label>Name<br><input name="name" required></label><br><br>
+    <label>Phone (optional, +E.164)<br><input name="phone" placeholder="+15551234567"></label><br><br>
+    <button class="btn" type="submit">Sign me up</button>
+  </form>
+</div>
+
+<div class="card">
+  <h3>Current Signups</h3>
+  {% if signups %}
+  <table>
+    <thead><tr><th>#</th><th>Name</th><th>Phone</th><th>Time (UTC)</th></tr></thead>
+    <tbody>
+      {% for s in signups %}
+        <tr>
+          <td>{{ loop.index }}</td>
+          <td>{{ s[0] }}</td>
+          <td>{{ s[1] or '(none)' }}</td>
+          <td class="muted">{{ s[2].split('.')[0].replace('T',' ') }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+    <p class="muted">No signups yet.</p>
+  {% endif %}
+</div>
+{% endblock %}

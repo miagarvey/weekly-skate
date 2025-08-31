@@ -1,0 +1,45 @@
+{% extends 'base.html' %}
+{% block body %}
+<div class="card">
+  <h1>Admin — Weekly Skate</h1>
+  <p class="muted">Week {{ iso_week }}, {{ iso_year }} | {{ count }} / {{ quota }} | Goalie notified: {{ 'yes' if goalie_notified else 'no' }}</p>
+  <form method="POST" action="{{ url_for('admin_set_quota') }}?token={{ token }}">
+    <label>Quota <input name="quota" type="number" min="1" value="{{ quota }}" required></label>
+    <button class="btn" type="submit">Update Quota</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Broadcast List</h2>
+  <ul>
+    {% for n in numbers %}<li>{{ n }}</li>{% endfor %}
+  </ul>
+  <form method="POST" action="{{ url_for('admin_add_number') }}?token={{ token }}">
+    <input name="phone" placeholder="+15551234567" required>
+    <button class="btn" type="submit">Add Number</button>
+  </form>
+  <form method="POST" action="{{ url_for('admin_remove_number') }}?token={{ token }}" style="margin-top:.5rem;">
+    <input name="phone" placeholder="+15551234567" required>
+    <button class="btn" type="submit">Remove Number</button>
+  </form>
+  <form method="POST" action="{{ url_for('admin_broadcast') }}?token={{ token }}" style="margin-top:.5rem;">
+    <button class="btn" type="submit">Send Signup List to Broadcast</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Goalie Manager</h2>
+  <form method="POST" action="{{ url_for('admin_set_goalie') }}?token={{ token }}">
+    <input name="goalie_phone" value="{{ goalie_phone }}" placeholder="+15551234567">
+    <button class="btn" type="submit">Save Goalie Number</button>
+  </form>
+  <form method="POST" action="{{ url_for('admin_notify_goalie') }}?token={{ token }}" style="margin-top:.5rem;">
+    <button class="btn" type="submit">Manually Notify Goalie Now</button>
+  </form>
+  <form method="POST" action="{{ url_for('admin_test_sms') }}?token={{ token }}" style="margin-top:.5rem;">
+    <input name="test_phone" placeholder="+15551234567" value="{{ goalie_phone }}">
+    <button class="btn" type="submit">Send Test SMS</button>
+  </form>
+  
+</div>
+{% endblock %}
