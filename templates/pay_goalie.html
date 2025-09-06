@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+
+{% block title %}Pay Goalie - Weekly Skate{% endblock %}
+
+{% block head %}
+<!-- PayPal JS SDK with Venmo enabled -->
+<script src="https://www.paypal.com/sdk/js?client-id=ARgOkVgF0j3MxXpa3qpedsnW4-fBY5295ziQFmuvc3jgEXp1QT2l1RE1__WcVwvA93odCTiSia-cPkG1&enable-funding=venmo&currency=USD"></script>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h1>Pay Goalie Fee</h1>
+    <p>Weekly Skate - Goalie Payment</p>
+    
+    <div class="payment-section">
+        <h3>Amount: $10.00</h3>
+        <p>Payment for securing goalie for weekly skate session</p>
+        
+        <!-- PayPal/Venmo Payment Buttons Container -->
+        <div id="paypal-button-container"></div>
+        
+        <!-- Alternative: Create order and get link -->
+        <div class="alternative-payment" style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #ccc;">
+            <h4>Or get payment link:</h4>
+            <form method="post" action="/create-goalie-order">
+                <input type="hidden" name="amount" value="10.00">
+                <button type="submit" class="btn btn-secondary">Create Payment Link</button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+    paypal.Buttons({
+        createOrder: function(data, actions) {
+            return actions.order.create({
+                purchase_units: [{
+                    amount: {
+                        value: '10.00',
+                        currency_code: 'USD'
+                    },
+                    description: 'Weekly Skate Goalie Fee'
+                }],
+                application_context: {
+                    shipping_preference: 'NO_SHIPPING'
+                }
+            });
+        },
+        onApprove: function(data, actions) {
+            return actions.order.capture().then(function(details) {
+                console.log('Payment completed:', details);
+                window.location.href = '/payment/success?token=' + data.orderID;
+            });
+        },
+        onError: function(err) {
+            console.error('Payment error:', err);
+            alert('Payment failed. Please try again.');
+        },
+        onCancel: function(data) {
+            console.log('Payment cancelled:', data);
+            window.location.href = '/payment/cancel?token=' + data.orderID;
+        },
+        style: {
+            layout: 'vertical',
+            color: 'blue',
+            shape: 'rect',
+            label: 'paypal'
+        }
+    }).render('#paypal-button-container');
+</script>
+{% endblock %}

@@ -1,218 +1,81 @@
 from __future__ import annotations
 import os
-import sqlite3
-from contextlib import closing
+import logging
 from datetime import datetime
-from typing import Tuple, List
 
-from flask import Flask, request, redirect, url_for, render_template, abort
-from pydantic import BaseModel, field_validator
+from flask import Flask, request, redirect, url_for, render_template, jsonify
+import re
 
-# Optional Twilio (safe to leave unset; we'll "dry-run" to console)
-try:
-    from twilio.rest import Client
-except Exception:
-    Client = None  # type: ignore
+# Import our modular components
+from models import init_db, Signup
+from models.database import (
+    get_week_info, set_quota, add_broadcast_number, remove_broadcast_number,
+    get_broadcast_numbers, get_goalie_phone, set_goalie_phone, mark_goalie_notified,
+    get_goalie_venmo_username, store_goalie_venmo_username
+)
+from models.models import is_e164
+from services import MessagingService, PaymentService, NLPService
+from services.mcp_client import mcp_client
+from utils import WeekUtils, require_admin
+from utils.config import Config, validate_startup_config
+from utils.security import SecurityManager, require_rate_limit, rate_limiter
+
+# Validate configuration and setup logging
+validate_startup_config()
 
 app = Flask(__name__)
+app.secret_key = Config.SECRET_KEY
 
-# --- Config & env ---
-DB_PATH = os.environ.get("DB_PATH", "skate.db")
-DEFAULT_QUOTA = int(os.environ.get("DEFAULT_QUOTA", "16"))
-ADMIN_TOKEN = os.environ.get("ADMIN_TOKEN", "")
-TWILIO_DRY_RUN = os.environ.get("TWILIO_DRY_RUN", "0") == "1"
+# Configure Flask app
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 
-TWILIO_SID = os.environ.get("TWILIO_ACCOUNT_SID")
-TWILIO_AUTH = os.environ.get("TWILIO_AUTH_TOKEN")
-TWILIO_FROM = os.environ.get("TWILIO_FROM")
+# Initialize services with configuration
+messaging = MessagingService()
+payment = PaymentService()
+nlp = NLPService()
 
-def twilio_client():
-    if TWILIO_SID and TWILIO_AUTH and Client is not None:
-        return Client(TWILIO_SID, TWILIO_AUTH)
-    return None
+# Initialize database
+init_db()
 
-# --- DB bootstrap ---
-SCHEMA = """
-PRAGMA foreign_keys = ON;
+# Setup logging
+logger = logging.getLogger(__name__)
+logger.info("Weekly Skate App starting up")
+logger.info(f"Environment: {Config.FLASK_ENV}")
+logger.info(f"Debug mode: {Config.FLASK_DEBUG}")
+logger.info(f"Twilio dry run: {Config.TWILIO_DRY_RUN}")
 
-CREATE TABLE IF NOT EXISTS weeks (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  iso_year INTEGER NOT NULL,
-  iso_week INTEGER NOT NULL,
-  quota INTEGER NOT NULL,
-  goalie_notified INTEGER NOT NULL DEFAULT 0,
-  UNIQUE(iso_year, iso_week)
-);
-
-CREATE TABLE IF NOT EXISTS signups (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  week_id INTEGER NOT NULL,
-  name TEXT NOT NULL,
-  phone TEXT,
-  created_at TEXT NOT NULL,
-  FOREIGN KEY(week_id) REFERENCES weeks(id) ON DELETE CASCADE
-);
-
-CREATE TABLE IF NOT EXISTS broadcasts (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  phone TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS settings (
-  key TEXT PRIMARY KEY,
-  value TEXT NOT NULL
-);
-"""
-
-def db():
-    return sqlite3.connect(DB_PATH, check_same_thread=False)
-
-with closing(db()) as conn:
-    conn.executescript(SCHEMA)
-    # ensure keys exist
-    cur = conn.execute("SELECT value FROM settings WHERE key='goalie_phone'")
-    if cur.fetchone() is None:
-        conn.execute("INSERT INTO settings(key, value) VALUES('goalie_phone','')")
-    conn.commit()
-
-# --- Helpers ---
-def get_week_key(dt: datetime | None = None) -> Tuple[int, int]:
-    dt = dt or datetime.now()
-    iso_year, iso_week, _ = dt.isocalendar()
-    return iso_year, iso_week
-
-def get_or_create_current_week() -> int:
-    y, w = get_week_key()
-    with closing(db()) as conn:
-        row = conn.execute(
-            "SELECT id FROM weeks WHERE iso_year=? AND iso_week=?",
-            (y, w)
-        ).fetchone()
-        if row:
-            return row[0]
-        conn.execute(
-            "INSERT INTO weeks(iso_year, iso_week, quota) VALUES(?,?,?)",
-            (y, w, DEFAULT_QUOTA)
-        )
-        conn.commit()
-        return conn.execute(
-            "SELECT id FROM weeks WHERE iso_year=? AND iso_week=?",
-            (y, w)
-        ).fetchone()[0]
-
-def get_week_info(week_id: int):
-    with closing(db()) as conn:
-        week = conn.execute(
-            "SELECT iso_year, iso_week, quota, goalie_notified FROM weeks WHERE id=?",
-            (week_id,)
-        ).fetchone()
-        signups = conn.execute(
-            "SELECT name, phone, created_at FROM signups WHERE week_id=? ORDER BY created_at ASC",
-            (week_id,)
-        ).fetchall()
-        return week, signups
-
-def set_quota(week_id: int, quota: int):
-    with closing(db()) as conn:
-        conn.execute("UPDATE weeks SET quota=? WHERE id=?", (quota, week_id))
-        conn.commit()
-
-def is_e164(phone: str) -> bool:
-    phone = phone.strip()
-    return phone.startswith("+") and phone[1:].isdigit() and 8 <= len(phone) <= 16
-
-def add_broadcast_number(phone: str):
-    with closing(db()) as conn:
-        conn.execute("INSERT INTO broadcasts(phone) VALUES(?)", (phone,))
-        conn.commit()
-
-def remove_broadcast_number(phone: str):
-    with closing(db()) as conn:
-        conn.execute("DELETE FROM broadcasts WHERE phone=?", (phone,))
-        conn.commit()
-
-def get_broadcast_numbers() -> List[str]:
-    with closing(db()) as conn:
-        return [r[0] for r in conn.execute("SELECT phone FROM broadcasts ORDER BY id").fetchall()]
-
-def get_goalie_phone() -> str:
-    with closing(db()) as conn:
-        return conn.execute("SELECT value FROM settings WHERE key='goalie_phone'").fetchone()[0]
-
-def set_goalie_phone(phone: str):
-    with closing(db()) as conn:
-        conn.execute("UPDATE settings SET value=? WHERE key='goalie_phone'", (phone,))
-        conn.commit()
-
-def mark_goalie_notified(week_id: int):
-    with closing(db()) as conn:
-        conn.execute("UPDATE weeks SET goalie_notified=1 WHERE id=?", (week_id,))
-        conn.commit()
-
-# --- Validation models ---
-class Signup(BaseModel):
-    name: str
-    phone: str | None = None
-
-    @field_validator("name")
-    @classmethod
-    def name_not_empty(cls, v):
-        v = v.strip()
-        if not v:
-            raise ValueError("Name required")
-        return v
-
-    @field_validator("phone")
-    @classmethod
-    def phone_e164_or_blank(cls, v):
-        if v is None or v.strip() == "":
-            return None
-        v = v.strip()
-        if is_e164(v):
-            return v
-        raise ValueError("Phone must be +E.164 like +15551234567 or leave blank")
-
-# --- Messaging ---
-def format_signup_list(signups) -> str:
-    if not signups:
-        return "No signups yet."
-    lines = ["Weekly Skate Signups:"]
-    for idx, (name, phone, created_at) in enumerate(signups, 1):
-        p = phone or "(no phone)"
-        t = created_at.split(".")[0].replace("T", " ")
-        lines.append(f"{idx}. {name} {p} – {t}")
-    return "\n".join(lines)
-
-def send_sms(to: str, body: str):
-    if TWILIO_DRY_RUN:
-        print(f"[SMS DRY-RUN to {to}]\n{body}\n---")
-        return
-    client = twilio_client()
-    if client and (TWILIO_FROM or os.environ.get("TWILIO_MESSAGING_SERVICE_SID")):
-        try:
-            params = {"to": to, "body": body}
-            if os.environ.get("TWILIO_MESSAGING_SERVICE_SID"):
-                params["messaging_service_sid"] = os.environ["TWILIO_MESSAGING_SERVICE_SID"]
-            else:
-                params["from_"] = TWILIO_FROM
-            msg = client.messages.create(**params)
-            print(f"[SMS SENT] to {to} sid={msg.sid}")
-        except Exception as e:
-            print(f"[SMS ERROR] to {to}: {e}")
-    else:
-        print(f"[SMS DRY-RUN to {to}]\n{body}\n---")
-
-def broadcast_signups(signups) -> int:
-    nums = get_broadcast_numbers()
-    if not nums:
-        return 0
-    body = format_signup_list(signups)
-    for n in nums:
-        send_sms(n, body)
-    return len(nums)
+def use_mcp_tool_wrapper(server_name: str, tool_name: str, arguments: dict):
+    """
+    Wrapper function to use MCP tools from within the app
+    
+    This function provides a bridge between the MCP client and the Flask app,
+    allowing the MCP client to call MCP tools without circular imports.
+    """
+    try:
+        # Import here to avoid circular imports
+        from cline import use_mcp_tool
+        
+        # Use the actual MCP tool
+        result = use_mcp_tool(server_name, tool_name, arguments)
+        logger.info(f"MCP Tool {server_name}.{tool_name} executed successfully")
+        return result
+        
+    except ImportError:
+        # Fallback if cline module is not available
+        logger.warning(f"MCP tool {server_name}.{tool_name} not available - using mock response")
+        return {
+            "mock": True,
+            "server": server_name,
+            "tool": tool_name,
+            "arguments": arguments,
+            "message": "MCP tool not available - mock response"
+        }
+    except Exception as e:
+        logger.error(f"MCP Tool {server_name}.{tool_name} failed: {e}")
+        raise
 
 def notify_goalie_if_needed(week_id: int):
-    # check state and possibly send
+    """Check if goalie needs to be notified and send SMS if quota reached"""
     (iso_year, iso_week, quota, goalie_notified), signups = get_week_info(week_id)
     if goalie_notified:
         return False
@@ -224,23 +87,17 @@ def notify_goalie_if_needed(week_id: int):
         body = (
             f"Quota reached for Week {iso_week}, {iso_year}!\n"
             f"Total signups: {len(signups)} (quota {quota}).\n"
-            f"Please secure a goalie.\n\n" + format_signup_list(signups)
+            f"Please secure a goalie.\n\n" + messaging.format_signup_list(signups)
         )
-        send_sms(goalie_phone, body)
+        messaging.send_sms(goalie_phone, body)
         mark_goalie_notified(week_id)
         return True
     return False
 
-# --- Admin auth helper ---
-def require_admin():
-    token = request.args.get("token") or request.headers.get("Authorization", "").replace("Bearer ","").strip()
-    if not ADMIN_TOKEN or token != ADMIN_TOKEN:
-        abort(401)
-
 # --- Routes ---
 @app.get("/")
 def home():
-    week_id = get_or_create_current_week()
+    week_id = WeekUtils.get_or_create_current_week()
     (iso_year, iso_week, quota, goalie_notified), signups = get_week_info(week_id)
     return render_template(
         "home.html",
@@ -253,7 +110,7 @@ def home():
 
 @app.post("/signup")
 def submit_signup():
-    week_id = get_or_create_current_week()
+    week_id = WeekUtils.get_or_create_current_week()
     # validate
     try:
         data = Signup(name=request.form.get("name",""), phone=request.form.get("phone"))
@@ -261,6 +118,8 @@ def submit_signup():
         return redirect(url_for("home") + f"?error={str(e)}")
 
     # insert
+    from contextlib import closing
+    from models.database import db
     with closing(db()) as conn:
         conn.execute(
             "INSERT INTO signups(week_id, name, phone, created_at) VALUES(?,?,?,?)",
@@ -276,7 +135,7 @@ def submit_signup():
 @app.get("/admin")
 def admin():
     require_admin()
-    week_id = get_or_create_current_week()
+    week_id = WeekUtils.get_or_create_current_week()
     (iso_year, iso_week, quota, goalie_notified), signups = get_week_info(week_id)
     numbers = get_broadcast_numbers()
     goalie_phone = get_goalie_phone()
@@ -292,7 +151,7 @@ def admin():
 @app.post("/admin/quota")
 def admin_set_quota():
     require_admin()
-    week_id = get_or_create_current_week()
+    week_id = WeekUtils.get_or_create_current_week()
     q = int(request.form.get("quota","0"))
     if q < 1:
         return redirect(url_for("admin", token=request.args.get("token","")) + "?error=bad_quota")
@@ -318,9 +177,9 @@ def admin_remove_number():
 @app.post("/admin/broadcast/send")
 def admin_broadcast():
     require_admin()
-    week_id = get_or_create_current_week()
+    week_id = WeekUtils.get_or_create_current_week()
     _, signups = get_week_info(week_id)
-    broadcast_signups(signups)
+    messaging.broadcast_signups(signups)
     return redirect(url_for("admin", token=request.args.get("token","")))
 
 @app.post("/admin/goalie")
@@ -335,7 +194,7 @@ def admin_set_goalie():
 @app.post("/admin/notify-goalie")
 def admin_notify_goalie():
     require_admin()
-    week_id = get_or_create_current_week()
+    week_id = WeekUtils.get_or_create_current_week()
     notify_goalie_if_needed(week_id)
     return redirect(url_for("admin", token=request.args.get("token","")))
 
@@ -345,9 +204,184 @@ def admin_test_sms():
     phone = request.form.get("test_phone","").strip() or get_goalie_phone()
     if not phone:
         return redirect(url_for("admin", token=request.args.get("token","")) + "?error=no_phone")
-    send_sms(phone, "Test from Weekly Skate admin.")
+    messaging.send_sms(phone, "Test from Weekly Skate admin.")
     return redirect(url_for("admin", token=request.args.get("token","")) + "?ok=test_sent")
 
+@app.post("/admin/test-payment")
+def admin_test_payment():
+    require_admin()
+    try:
+        success = payment.create_goalie_payment_request(1.00, "test@example.com")
+        if success:
+            return redirect(url_for("admin", token=request.args.get("token","")) + "?ok=payment_test_sent")
+        else:
+            return redirect(url_for("admin", token=request.args.get("token","")) + "?error=payment_test_failed")
+    except Exception as e:
+        print(f"[PAYMENT TEST ERROR] {e}")
+        return redirect(url_for("admin", token=request.args.get("token","")) + "?error=payment_test_error")
+
+@app.post("/admin/test-venmo")
+def admin_test_venmo():
+    require_admin()
+    try:
+        result = payment.create_venmo_friendly_order(10.00, "Test Goalie Fee")
+        if result["success"]:
+            return redirect(url_for("admin", token=request.args.get("token","")) + f"?ok=venmo_test_created&order_id={result['order_id']}")
+        else:
+            return redirect(url_for("admin", token=request.args.get("token","")) + "?error=venmo_test_failed")
+    except Exception as e:
+        print(f"[VENMO TEST ERROR] {e}")
+        return redirect(url_for("admin", token=request.args.get("token","")) + "?error=venmo_test_error")
+
+@app.post("/admin/pay-goalie")
+def admin_pay_goalie():
+    require_admin()
+    try:
+        venmo_username = request.form.get("venmo_username","").strip()
+        amount = float(request.form.get("amount", 10.00))
+        
+        if not venmo_username:
+            return redirect(url_for("admin", token=request.args.get("token","")) + "?error=no_venmo_username")
+        
+        week_id = WeekUtils.get_or_create_current_week()
+        success = payment.send_payment_to_goalie(week_id, amount, venmo_username)
+        
+        if success:
+            return redirect(url_for("admin", token=request.args.get("token","")) + f"?ok=goalie_paid&amount={amount}&username={venmo_username}")
+        else:
+            return redirect(url_for("admin", token=request.args.get("token","")) + "?error=goalie_payment_failed")
+            
+    except Exception as e:
+        print(f"[GOALIE PAYMENT ERROR] {e}")
+        return redirect(url_for("admin", token=request.args.get("token","")) + "?error=goalie_payment_error")
+
+# --- Payment Routes ---
+@app.get("/payment/success")
+def payment_success():
+    order_id = request.args.get("token")  # PayPal passes order ID as 'token'
+    print(f"[PAYMENT SUCCESS] Order ID: {order_id}")
+    return render_template("payment_success.html", order_id=order_id)
+
+@app.get("/payment/cancel")
+def payment_cancel():
+    order_id = request.args.get("token")
+    print(f"[PAYMENT CANCELLED] Order ID: {order_id}")
+    return render_template("payment_cancel.html", order_id=order_id)
+
+@app.get("/pay-goalie")
+def pay_goalie_page():
+    """Page with Venmo-enabled PayPal checkout for goalie payment"""
+    return render_template("pay_goalie.html")
+
+@app.post("/create-goalie-order")
+def create_goalie_order():
+    """API endpoint to create a Venmo-friendly PayPal order"""
+    try:
+        amount = float(request.form.get("amount", 10.00))
+        result = payment.create_venmo_friendly_order(amount, "Weekly Skate Goalie Fee")
+        
+        if result["success"]:
+            return {"success": True, "order_id": result["order_id"], "approval_url": result["approval_url"]}
+        else:
+            return {"success": False, "error": result.get("error", "Unknown error")}, 400
+            
+    except Exception as e:
+        print(f"[CREATE ORDER ERROR] {e}")
+        return {"success": False, "error": str(e)}, 500
+
+@app.post("/sms-webhook")
+@SecurityManager.require_twilio_signature
+@require_rate_limit(lambda: SecurityManager.sanitize_phone_number(request.form.get('From', '')))
+def sms_webhook():
+    """Twilio webhook endpoint for incoming SMS messages with security"""
+    try:
+        # Get message details from Twilio webhook
+        from_phone = request.form.get('From', '').strip()
+        message_body = request.form.get('Body', '').strip()
+        message_sid = request.form.get('MessageSid', '')
+        
+        print(f"[SMS WEBHOOK] Received message from {from_phone}")
+        print(f"[SMS WEBHOOK] Message: {message_body}")
+        print(f"[SMS WEBHOOK] SID: {message_sid}")
+        
+        # Check if this is from the goalie phone
+        goalie_phone = get_goalie_phone()
+        if not goalie_phone or from_phone != goalie_phone:
+            print(f"[SMS WEBHOOK] Message not from goalie phone ({goalie_phone}), ignoring")
+            return '<?xml version="1.0" encoding="UTF-8"?><Response></Response>', 200
+        
+        # Check if we have a current week that needs goalie confirmation
+        week_id = WeekUtils.get_current_week_needing_goalie()
+        if not week_id:
+            print(f"[SMS WEBHOOK] No current week needing goalie confirmation")
+            return '<?xml version="1.0" encoding="UTF-8"?><Response></Response>', 200
+        
+        # Use sophisticated NLP to analyze the message
+        nlp_result = nlp.analyze_message(message_body)
+        
+        if nlp_result.is_confirmation:
+            print(f"[SMS WEBHOOK] Goalie confirmation detected!")
+            print(f"[SMS WEBHOOK] Confidence: {nlp_result.confidence.value} ({nlp_result.confidence_score:.2f})")
+            
+            # Get or prompt for Venmo username
+            venmo_username = get_goalie_venmo_username(from_phone)
+            
+            # For high confidence confirmations, proceed immediately
+            if nlp.is_high_confidence(message_body) or venmo_username:
+                if not venmo_username:
+                    # Ask for Venmo username with confidence-aware message
+                    response_message = (
+                        f"Great! I'm {nlp_result.confidence_score*100:.0f}% confident you confirmed the goalie. "
+                        "To send your payment, please reply with your Venmo username (e.g., @username)"
+                    )
+                    messaging.send_sms(from_phone, response_message)
+                    print(f"[SMS WEBHOOK] Requested Venmo username from goalie (high confidence)")
+                else:
+                    # Send payment automatically
+                    success = payment.send_payment_to_goalie(week_id, 10.00, venmo_username)
+                    if success:
+                        response_message = f"Payment sent to @{venmo_username}! Thanks for securing the goalie. (Confidence: {nlp_result.confidence_score*100:.0f}%)"
+                        messaging.send_sms(from_phone, response_message)
+                        print(f"[SMS WEBHOOK] Automatic payment sent to @{venmo_username}")
+                    else:
+                        response_message = "Payment failed. Please contact admin."
+                        messaging.send_sms(from_phone, response_message)
+                        print(f"[SMS WEBHOOK] Payment failed for @{venmo_username}")
+            
+            # For medium confidence, ask for confirmation
+            elif nlp_result.confidence == nlp.ConfidenceLevel.MEDIUM:
+                response_message = (
+                    f"I think you confirmed the goalie (confidence: {nlp_result.confidence_score*100:.0f}%). "
+                    "Please reply 'YES' to confirm and proceed with payment, or 'NO' if I misunderstood."
+                )
+                messaging.send_sms(from_phone, response_message)
+                print(f"[SMS WEBHOOK] Requested explicit confirmation (medium confidence)")
+        
+        # Check if message contains Venmo username (for when we asked for it)
+        elif nlp.extract_venmo_username(message_body):
+            venmo_username = nlp.extract_venmo_username(message_body)
+            store_goalie_venmo_username(from_phone, venmo_username)
+            
+            # Now send the payment
+            success = payment.send_payment_to_goalie(week_id, 10.00, venmo_username)
+            if success:
+                response_message = f"Payment sent to @{venmo_username}! Thanks for securing the goalie."
+                messaging.send_sms(from_phone, response_message)
+                print(f"[SMS WEBHOOK] Payment sent to newly provided @{venmo_username}")
+            else:
+                response_message = "Payment failed. Please contact admin."
+                messaging.send_sms(from_phone, response_message)
+                print(f"[SMS WEBHOOK] Payment failed for newly provided @{venmo_username}")
+        
+        else:
+            print(f"[SMS WEBHOOK] Message did not match confirmation or Venmo username patterns")
+        
+        # Return empty TwiML response
+        return '<?xml version="1.0" encoding="UTF-8"?><Response></Response>', 200
+        
+    except Exception as e:
+        print(f"[SMS WEBHOOK ERROR] {e}")
+        return '<?xml version="1.0" encoding="UTF-8"?><Response></Response>', 500
 
 # (Optional) quick health
 @app.get("/health")

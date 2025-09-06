@@ -1,45 +1,401 @@
 {% extends 'base.html' %}
+{% block title %}Admin Dashboard - Weekly Skate{% endblock %}
 {% block body %}
+
+<!-- Admin Header -->
 <div class="card">
-  <h1>Admin — Weekly Skate</h1>
-  <p class="muted">Week {{ iso_week }}, {{ iso_year }} | {{ count }} / {{ quota }} | Goalie notified: {{ 'yes' if goalie_notified else 'no' }}</p>
-  <form method="POST" action="{{ url_for('admin_set_quota') }}?token={{ token }}">
-    <label>Quota <input name="quota" type="number" min="1" value="{{ quota }}" required></label>
-    <button class="btn" type="submit">Update Quota</button>
-  </form>
+  <div class="card-header">
+    <div>
+      <h1 class="card-title">
+        <i class="fas fa-shield-alt"></i>
+        Admin Dashboard
+      </h1>
+      <p class="card-subtitle">Week {{ iso_week }}, {{ iso_year }}</p>
+    </div>
+    <div class="badge badge-success">
+      <i class="fas fa-user-shield"></i>
+      Administrator
+    </div>
+  </div>
+
+  <!-- Admin Stats -->
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="stat-value">{{ count }}</div>
+      <div class="stat-label">
+        <i class="fas fa-users"></i>
+        Total Signups
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">{{ quota }}</div>
+      <div class="stat-label">
+        <i class="fas fa-target"></i>
+        Current Quota
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">{{ numbers | length }}</div>
+      <div class="stat-label">
+        <i class="fas fa-broadcast-tower"></i>
+        Broadcast List
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">
+        {% if goalie_notified %}
+          <i class="fas fa-check-circle text-success"></i>
+        {% else %}
+          <i class="fas fa-times-circle text-danger"></i>
+        {% endif %}
+      </div>
+      <div class="stat-label">
+        <i class="fas fa-hockey-puck"></i>
+        Goalie Notified
+      </div>
+    </div>
+  </div>
+
+  <!-- Status Alerts -->
+  {% if request.args.get('ok') %}
+    <div class="alert alert-success">
+      <i class="fas fa-check-circle"></i>
+      <strong>Success!</strong> {{ request.args.get('ok').replace('_', ' ').title() }}
+    </div>
+  {% endif %}
+
+  {% if request.args.get('error') %}
+    <div class="alert alert-danger">
+      <i class="fas fa-exclamation-circle"></i>
+      <strong>Error:</strong> {{ request.args.get('error').replace('_', ' ').title() }}
+    </div>
+  {% endif %}
 </div>
 
+<!-- Quota Management -->
 <div class="card">
-  <h2>Broadcast List</h2>
-  <ul>
-    {% for n in numbers %}<li>{{ n }}</li>{% endfor %}
-  </ul>
-  <form method="POST" action="{{ url_for('admin_add_number') }}?token={{ token }}">
-    <input name="phone" placeholder="+15551234567" required>
-    <button class="btn" type="submit">Add Number</button>
-  </form>
-  <form method="POST" action="{{ url_for('admin_remove_number') }}?token={{ token }}" style="margin-top:.5rem;">
-    <input name="phone" placeholder="+15551234567" required>
-    <button class="btn" type="submit">Remove Number</button>
-  </form>
-  <form method="POST" action="{{ url_for('admin_broadcast') }}?token={{ token }}" style="margin-top:.5rem;">
-    <button class="btn" type="submit">Send Signup List to Broadcast</button>
-  </form>
-</div>
-
-<div class="card">
-  <h2>Goalie Manager</h2>
-  <form method="POST" action="{{ url_for('admin_set_goalie') }}?token={{ token }}">
-    <input name="goalie_phone" value="{{ goalie_phone }}" placeholder="+15551234567">
-    <button class="btn" type="submit">Save Goalie Number</button>
-  </form>
-  <form method="POST" action="{{ url_for('admin_notify_goalie') }}?token={{ token }}" style="margin-top:.5rem;">
-    <button class="btn" type="submit">Manually Notify Goalie Now</button>
-  </form>
-  <form method="POST" action="{{ url_for('admin_test_sms') }}?token={{ token }}" style="margin-top:.5rem;">
-    <input name="test_phone" placeholder="+15551234567" value="{{ goalie_phone }}">
-    <button class="btn" type="submit">Send Test SMS</button>
+  <div class="card-header">
+    <h2 class="card-title">
+      <i class="fas fa-sliders-h"></i>
+      Quota Management
+    </h2>
+  </div>
+  
+  <form method="POST" action="{{ url_for('admin_set_quota') }}?token={{ token }}" class="flex items-center gap-2">
+    <div class="form-group mb-0" style="flex: 1;">
+      <label class="form-label">Weekly Player Quota</label>
+      <input name="quota" type="number" min="1" max="50" value="{{ quota }}" required class="form-input">
+    </div>
+    <button class="btn btn-primary" type="submit" style="margin-top: 1.5rem;">
+      <i class="fas fa-save"></i>
+      Update Quota
+    </button>
   </form>
   
+  <div class="mt-2" style="padding-top: 1rem; border-top: 1px solid var(--border);">
+    <div class="text-muted">
+      <i class="fas fa-info-circle"></i>
+      Current progress: {{ count }}/{{ quota }} players ({{ ((count / quota * 100) | round(1)) }}%)
+    </div>
+  </div>
 </div>
+
+<!-- Broadcast Management -->
+<div class="card">
+  <div class="card-header">
+    <h2 class="card-title">
+      <i class="fas fa-broadcast-tower"></i>
+      Broadcast Management
+    </h2>
+    <span class="badge badge-info">{{ numbers | length }} numbers</span>
+  </div>
+
+  <!-- Current Numbers -->
+  {% if numbers %}
+    <div class="mb-2">
+      <h4 style="margin-bottom: 1rem;">Current Broadcast List</h4>
+      <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0.5rem;">
+        {% for n in numbers %}
+          <div style="display: flex; align-items: center; justify-content: space-between; padding: 0.5rem; background: var(--background); border-radius: 0.5rem;">
+            <span class="text-muted">
+              <i class="fas fa-phone"></i>
+              {{ n }}
+            </span>
+            <form method="POST" action="{{ url_for('admin_remove_number') }}?token={{ token }}" style="margin: 0;">
+              <input type="hidden" name="phone" value="{{ n }}">
+              <button type="submit" class="btn btn-danger btn-sm">
+                <i class="fas fa-trash"></i>
+              </button>
+            </form>
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+  {% else %}
+    <div class="text-center mb-2" style="padding: 2rem;">
+      <i class="fas fa-broadcast-tower" style="font-size: 2rem; color: var(--text-muted); margin-bottom: 1rem;"></i>
+      <h4 class="text-muted">No broadcast numbers configured</h4>
+      <p class="text-muted">Add phone numbers to send signup notifications</p>
+    </div>
+  {% endif %}
+
+  <!-- Add Number Form -->
+  <div style="border-top: 1px solid var(--border); padding-top: 1rem;">
+    <form method="POST" action="{{ url_for('admin_add_number') }}?token={{ token }}" class="flex gap-2">
+      <div class="form-group mb-0" style="flex: 1;">
+        <input name="phone" placeholder="+1 (555) 123-4567" required class="form-input">
+      </div>
+      <button class="btn btn-success" type="submit">
+        <i class="fas fa-plus"></i>
+        Add Number
+      </button>
+    </form>
+  </div>
+
+  <!-- Broadcast Action -->
+  {% if numbers %}
+    <div style="border-top: 1px solid var(--border); padding-top: 1rem; margin-top: 1rem;">
+      <form method="POST" action="{{ url_for('admin_broadcast') }}?token={{ token }}">
+        <button class="btn btn-warning" type="submit">
+          <i class="fas fa-bullhorn"></i>
+          Send Signup List to All Numbers
+        </button>
+      </form>
+      <small class="text-muted">
+        <i class="fas fa-info-circle"></i>
+        This will send the current signup list to all broadcast numbers
+      </small>
+    </div>
+  {% endif %}
+</div>
+
+<!-- Goalie Management -->
+<div class="card">
+  <div class="card-header">
+    <h2 class="card-title">
+      <i class="fas fa-hockey-puck"></i>
+      Goalie Management
+    </h2>
+    {% if goalie_notified %}
+      <span class="badge badge-success">
+        <i class="fas fa-check"></i>
+        Notified
+      </span>
+    {% else %}
+      <span class="badge badge-warning">
+        <i class="fas fa-clock"></i>
+        Pending
+      </span>
+    {% endif %}
+  </div>
+
+  <!-- Goalie Phone Setup -->
+  <form method="POST" action="{{ url_for('admin_set_goalie') }}?token={{ token }}" class="mb-2">
+    <div class="form-group">
+      <label class="form-label">
+        <i class="fas fa-phone"></i>
+        Goalie Phone Number
+      </label>
+      <input name="goalie_phone" value="{{ goalie_phone or '' }}" placeholder="+1 (555) 123-4567" class="form-input">
+      <small class="text-muted">
+        <i class="fas fa-info-circle"></i>
+        Phone number to notify when quota is reached
+      </small>
+    </div>
+    <button class="btn btn-primary" type="submit">
+      <i class="fas fa-save"></i>
+      Save Goalie Number
+    </button>
+  </form>
+
+  <!-- Goalie Actions -->
+  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; border-top: 1px solid var(--border); padding-top: 1rem;">
+    <form method="POST" action="{{ url_for('admin_notify_goalie') }}?token={{ token }}">
+      <button class="btn btn-warning" type="submit" style="width: 100%;">
+        <i class="fas fa-bell"></i>
+        Notify Goalie Now
+      </button>
+    </form>
+    
+    <form method="POST" action="{{ url_for('admin_test_sms') }}?token={{ token }}">
+      <input type="hidden" name="test_phone" value="{{ goalie_phone or '' }}">
+      <button class="btn btn-secondary" type="submit" style="width: 100%;" {% if not goalie_phone %}disabled{% endif %}>
+        <i class="fas fa-sms"></i>
+        Send Test SMS
+      </button>
+    </form>
+  </div>
+</div>
+
+<!-- Payment Management -->
+<div class="card">
+  <div class="card-header">
+    <h2 class="card-title">
+      <i class="fas fa-credit-card"></i>
+      Payment Management
+    </h2>
+  </div>
+
+  <!-- Goalie Payment -->
+  <div class="mb-2">
+    <h4 style="margin-bottom: 1rem;">
+      <i class="fas fa-money-bill-wave"></i>
+      Send Goalie Payment
+    </h4>
+    <form method="POST" action="{{ url_for('admin_pay_goalie') }}?token={{ token }}" class="flex gap-2" style="flex-wrap: wrap;">
+      <div class="form-group mb-0" style="flex: 2; min-width: 200px;">
+        <label class="form-label">Venmo Username</label>
+        <input name="venmo_username" placeholder="@username" required class="form-input">
+      </div>
+      <div class="form-group mb-0" style="flex: 1; min-width: 100px;">
+        <label class="form-label">Amount ($)</label>
+        <input name="amount" type="number" step="0.01" value="10.00" min="0.01" required class="form-input">
+      </div>
+      <button class="btn btn-success" type="submit" style="margin-top: 1.5rem;">
+        <i class="fas fa-paper-plane"></i>
+        Send Payment
+      </button>
+    </form>
+    <small class="text-muted">
+      <i class="fas fa-info-circle"></i>
+      Enter the goalie's Venmo username (e.g., @john-doe) to send payment
+    </small>
+  </div>
+
+  <!-- Payment Testing -->
+  <div style="border-top: 1px solid var(--border); padding-top: 1rem;">
+    <h4 style="margin-bottom: 1rem;">
+      <i class="fas fa-flask"></i>
+      Payment Testing
+    </h4>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1rem;">
+      <form method="POST" action="{{ url_for('admin_test_payment') }}?token={{ token }}">
+        <button class="btn btn-secondary" type="submit" style="width: 100%;">
+          <i class="fas fa-file-invoice-dollar"></i>
+          Test PayPal Invoice ($1.00)
+        </button>
+      </form>
+      
+      <form method="POST" action="{{ url_for('admin_test_venmo') }}?token={{ token }}">
+        <button class="btn btn-secondary" type="submit" style="width: 100%;">
+          <i class="fas fa-mobile-alt"></i>
+          Test Venmo Order ($10.00)
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Payment Page Link -->
+  <div style="border-top: 1px solid var(--border); padding-top: 1rem; margin-top: 1rem;">
+    <div class="flex items-center justify-between">
+      <div>
+        <h4 style="margin-bottom: 0.5rem;">
+          <i class="fas fa-external-link-alt"></i>
+          Public Payment Page
+        </h4>
+        <p class="text-muted">Venmo-enabled PayPal checkout for goalie payments</p>
+      </div>
+      <a href="/pay-goalie" target="_blank" class="btn btn-primary">
+        <i class="fas fa-credit-card"></i>
+        Open Payment Page
+      </a>
+    </div>
+  </div>
+</div>
+
+<!-- System Information -->
+<div class="card">
+  <div class="card-header">
+    <h2 class="card-title">
+      <i class="fas fa-info-circle"></i>
+      System Information
+    </h2>
+  </div>
+  
+  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1rem;">
+    <div>
+      <h4 style="margin-bottom: 0.5rem; color: var(--text-primary);">
+        <i class="fas fa-server"></i>
+        Application Status
+      </h4>
+      <p class="text-success">
+        <i class="fas fa-check-circle"></i>
+        Online and operational
+      </p>
+    </div>
+    
+    <div>
+      <h4 style="margin-bottom: 0.5rem; color: var(--text-primary);">
+        <i class="fas fa-shield-alt"></i>
+        Security Mode
+      </h4>
+      <p class="text-warning">
+        <i class="fas fa-exclamation-triangle"></i>
+        Development (Dry Run)
+      </p>
+    </div>
+    
+    <div>
+      <h4 style="margin-bottom: 0.5rem; color: var(--text-primary);">
+        <i class="fas fa-database"></i>
+        Database
+      </h4>
+      <p class="text-success">
+        <i class="fas fa-check-circle"></i>
+        Connected
+      </p>
+    </div>
+    
+    <div>
+      <h4 style="margin-bottom: 0.5rem; color: var(--text-primary);">
+        <i class="fas fa-robot"></i>
+        AI/NLP Engine
+      </h4>
+      <p class="text-success">
+        <i class="fas fa-check-circle"></i>
+        Active
+      </p>
+    </div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  // Add confirmation for destructive actions
+  const dangerButtons = document.querySelectorAll('.btn-danger');
+  dangerButtons.forEach(btn => {
+    btn.addEventListener('click', function(e) {
+      if (!confirm('Are you sure you want to perform this action?')) {
+        e.preventDefault();
+      }
+    });
+  });
+
+  // Add confirmation for broadcast
+  const broadcastBtn = document.querySelector('button[type="submit"]:has(i.fa-bullhorn)');
+  if (broadcastBtn) {
+    broadcastBtn.addEventListener('click', function(e) {
+      if (!confirm('Send signup list to all broadcast numbers?')) {
+        e.preventDefault();
+      }
+    });
+  }
+
+  // Format phone number inputs
+  const phoneInputs = document.querySelectorAll('input[name*="phone"]');
+  phoneInputs.forEach(input => {
+    input.addEventListener('input', function() {
+      let value = this.value.replace(/\D/g, '');
+      if (value.length > 0 && !value.startsWith('1')) {
+        value = '1' + value;
+      }
+      if (value.length >= 11) {
+        this.value = '+' + value.substring(0, 1) + ' (' + value.substring(1, 4) + ') ' + 
+                    value.substring(4, 7) + '-' + value.substring(7, 11);
+      }
+    });
+  });
+});
+</script>
+
 {% endblock %}

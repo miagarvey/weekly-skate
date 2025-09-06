@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+
+{% block title %}Payment Cancelled - Weekly Skate{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="cancel-message" style="text-align: center; padding: 40px; background-color: #f8d7da; border: 1px solid #f5c6cb; border-radius: 5px; color: #721c24;">
+        <h1>Payment Cancelled</h1>
+        <p>Your payment was cancelled.</p>
+        
+        {% if order_id %}
+        <p><strong>Order ID:</strong> {{ order_id }}</p>
+        {% endif %}
+        
+        <p>No charges have been made to your account.</p>
+        
+        <div style="margin-top: 30px;">
+            <a href="/pay-goalie" class="btn btn-primary">Try Again</a>
+            <a href="/" class="btn btn-secondary" style="margin-left: 10px;">Back to Weekly Skate</a>
+        </div>
+    </div>
+</div>
+{% endblock %}

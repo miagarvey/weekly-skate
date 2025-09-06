@@ -1,35 +1,246 @@
 {% extends 'base.html' %}
+{% block title %}Weekly Skate - Week {{ iso_week }}, {{ iso_year }}{% endblock %}
 {% block body %}
-<div class="card">
-  <h1>Weekly Skate Sign-up</h1>
-  <p class="muted">Week {{ iso_week }}, {{ iso_year }}</p>
-  <p><strong>{{ count }}</strong> / {{ quota }} signed up</p>
 
-  <form method="POST" action="{{ url_for('submit_signup') }}">
-    <label>Name<br><input name="name" required></label><br><br>
-    <label>Phone (optional, +E.164)<br><input name="phone" placeholder="+15551234567"></label><br><br>
-    <button class="btn" type="submit">Sign me up</button>
+<!-- Hero Section -->
+<div class="card">
+  <div class="card-header">
+    <div>
+      <h1 class="card-title">
+        <i class="fas fa-hockey-puck"></i>
+        Weekly Skate Sign-up
+      </h1>
+      <p class="card-subtitle">Week {{ iso_week }}, {{ iso_year }}</p>
+    </div>
+    <div class="badge badge-info">
+      <i class="fas fa-calendar-week"></i>
+      Active
+    </div>
+  </div>
+
+  <!-- Progress Stats -->
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="stat-value">{{ count }}</div>
+      <div class="stat-label">
+        <i class="fas fa-users"></i>
+        Players Signed Up
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">{{ quota }}</div>
+      <div class="stat-label">
+        <i class="fas fa-target"></i>
+        Target Quota
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">{{ quota - count }}</div>
+      <div class="stat-label">
+        <i class="fas fa-user-plus"></i>
+        Spots Remaining
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">{{ ((count / quota * 100) | round(1)) }}%</div>
+      <div class="stat-label">
+        <i class="fas fa-chart-line"></i>
+        Progress
+      </div>
+    </div>
+  </div>
+
+  <!-- Progress Bar -->
+  <div style="background: var(--border); border-radius: 1rem; height: 1rem; margin-bottom: 2rem; overflow: hidden;">
+    <div style="background: linear-gradient(90deg, var(--primary-color), var(--success-color)); height: 100%; width: {{ (count / quota * 100) | round(1) }}%; transition: width 0.5s ease;"></div>
+  </div>
+
+  <!-- Status Alert -->
+  {% if count >= quota %}
+    <div class="alert alert-success">
+      <i class="fas fa-check-circle"></i>
+      <strong>Quota Reached!</strong> We have enough players for this week's game.
+    </div>
+  {% elif count >= (quota * 0.8) %}
+    <div class="alert alert-warning">
+      <i class="fas fa-exclamation-triangle"></i>
+      <strong>Almost There!</strong> Only {{ quota - count }} more players needed.
+    </div>
+  {% endif %}
+
+  <!-- Error Messages -->
+  {% if request.args.get('error') %}
+    <div class="alert alert-danger">
+      <i class="fas fa-exclamation-circle"></i>
+      <strong>Error:</strong> {{ request.args.get('error') }}
+    </div>
+  {% endif %}
+
+  <!-- Sign-up Form -->
+  <form method="POST" action="{{ url_for('submit_signup') }}" class="mt-2">
+    <div class="form-group">
+      <label class="form-label">
+        <i class="fas fa-user"></i>
+        Full Name
+      </label>
+      <input name="name" class="form-input" required placeholder="Enter your full name">
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">
+        <i class="fas fa-phone"></i>
+        Phone Number (Optional)
+      </label>
+      <input name="phone" class="form-input" placeholder="+1 (555) 123-4567" type="tel">
+      <small class="text-muted">
+        <i class="fas fa-info-circle"></i>
+        Phone number helps with game updates and goalie notifications
+      </small>
+    </div>
+
+    <button type="submit" class="btn btn-primary">
+      <i class="fas fa-user-plus"></i>
+      Sign Me Up for This Week
+    </button>
   </form>
 </div>
 
+<!-- Current Signups -->
 <div class="card">
-  <h3>Current Signups</h3>
+  <div class="card-header">
+    <h2 class="card-title">
+      <i class="fas fa-list"></i>
+      Current Signups
+    </h2>
+    <span class="badge badge-info">{{ count }} players</span>
+  </div>
+
   {% if signups %}
-  <table>
-    <thead><tr><th>#</th><th>Name</th><th>Phone</th><th>Time (UTC)</th></tr></thead>
-    <tbody>
-      {% for s in signups %}
-        <tr>
-          <td>{{ loop.index }}</td>
-          <td>{{ s[0] }}</td>
-          <td>{{ s[1] or '(none)' }}</td>
-          <td class="muted">{{ s[2].split('.')[0].replace('T',' ') }}</td>
-        </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+    <div class="table-responsive">
+      <table class="table">
+        <thead>
+          <tr>
+            <th><i class="fas fa-hashtag"></i></th>
+            <th><i class="fas fa-user"></i> Name</th>
+            <th><i class="fas fa-phone"></i> Phone</th>
+            <th><i class="fas fa-clock"></i> Signed Up</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for s in signups %}
+            <tr>
+              <td>
+                <span class="badge badge-info">{{ loop.index }}</span>
+              </td>
+              <td>
+                <strong>{{ s[0] }}</strong>
+              </td>
+              <td>
+                {% if s[1] %}
+                  <span class="text-muted">
+                    <i class="fas fa-phone-alt"></i>
+                    {{ s[1] }}
+                  </span>
+                {% else %}
+                  <span class="text-muted">
+                    <i class="fas fa-phone-slash"></i>
+                    No phone
+                  </span>
+                {% endif %}
+              </td>
+              <td class="text-muted">
+                <i class="fas fa-calendar"></i>
+                {{ s[2].split('.')[0].replace('T', ' ') }}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Quick Stats -->
+    <div class="flex items-center justify-between mt-2" style="padding-top: 1rem; border-top: 1px solid var(--border);">
+      <div class="text-muted">
+        <i class="fas fa-users"></i>
+        {{ signups | selectattr(1) | list | length }} players provided phone numbers
+      </div>
+      <div class="text-muted">
+        <i class="fas fa-clock"></i>
+        Last signup: {{ signups[-1][2].split('.')[0].replace('T', ' ') if signups else 'None' }}
+      </div>
+    </div>
   {% else %}
-    <p class="muted">No signups yet.</p>
+    <div class="text-center" style="padding: 3rem 1rem;">
+      <i class="fas fa-users" style="font-size: 3rem; color: var(--text-muted); margin-bottom: 1rem;"></i>
+      <h3 class="text-muted">No signups yet</h3>
+      <p class="text-muted">Be the first to sign up for this week's game!</p>
+    </div>
   {% endif %}
 </div>
+
+<!-- Game Information -->
+<div class="card">
+  <div class="card-header">
+    <h2 class="card-title">
+      <i class="fas fa-info-circle"></i>
+      Game Information
+    </h2>
+  </div>
+  
+  <div class="flex gap-4" style="flex-wrap: wrap;">
+    <div style="flex: 1; min-width: 200px;">
+      <h4 style="margin-bottom: 0.5rem; color: var(--text-primary);">
+        <i class="fas fa-calendar-alt"></i>
+        When
+      </h4>
+      <p class="text-muted">Weekly games are typically scheduled for weekends. Check with organizers for exact times.</p>
+    </div>
+    
+    <div style="flex: 1; min-width: 200px;">
+      <h4 style="margin-bottom: 0.5rem; color: var(--text-primary);">
+        <i class="fas fa-map-marker-alt"></i>
+        Where
+      </h4>
+      <p class="text-muted">Location details will be shared with registered players via SMS or email.</p>
+    </div>
+    
+    <div style="flex: 1; min-width: 200px;">
+      <h4 style="margin-bottom: 0.5rem; color: var(--text-primary);">
+        <i class="fas fa-dollar-sign"></i>
+        Cost
+      </h4>
+      <p class="text-muted">Game fees are automatically handled through our payment system when quota is reached.</p>
+    </div>
+  </div>
+</div>
+
+<script>
+// Add some dynamic behavior
+document.addEventListener('DOMContentLoaded', function() {
+  // Animate progress bar on load
+  const progressBar = document.querySelector('[style*="width:"]');
+  if (progressBar) {
+    progressBar.style.width = '0%';
+    setTimeout(() => {
+      progressBar.style.width = '{{ (count / quota * 100) | round(1) }}%';
+    }, 500);
+  }
+
+  // Add form validation
+  const form = document.querySelector('form');
+  const phoneInput = document.querySelector('input[name="phone"]');
+  
+  if (phoneInput) {
+    phoneInput.addEventListener('input', function() {
+      const value = this.value;
+      if (value && !value.match(/^\+?[\d\s\-\(\)]+$/)) {
+        this.style.borderColor = 'var(--danger-color)';
+      } else {
+        this.style.borderColor = 'var(--border)';
+      }
+    });
+  }
+});
+</script>
+
 {% endblock %}
