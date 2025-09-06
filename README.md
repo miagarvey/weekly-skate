@@ -1,4 +1,4 @@
-# Weekly Skate - Automated Goalie Payment System
+# Weekly Skate - Agentic Management System
 
 Web application that automates weekly hockey signup management with intelligent SMS processing and automated payment distribution to goalies.
 
