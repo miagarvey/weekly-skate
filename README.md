@@ -2,38 +2,38 @@
 
 A sophisticated Flask web application that automates weekly hockey signup management with intelligent SMS processing and automated payment distribution to goalies.
 
-## 🏒 Overview
+## Overview
 
 Weekly Skate streamlines the process of organizing weekly hockey games by automatically tracking signups, notifying goalies when quotas are met, and processing payments through an intelligent SMS-based workflow.
 
-## ✨ Key Features
+## Key Features
 
-### 🤖 Intelligent SMS Processing
+### Intelligent SMS Processing
 - **Advanced NLP Analysis**: Sophisticated natural language processing with confidence scoring
 - **Context-Aware Responses**: Analyzes sentiment, urgency, and emotional indicators
 - **Multi-Pattern Recognition**: Handles various confirmation styles and ambiguous messages
 - **Automatic Venmo Username Extraction**: Smart parsing of payment information
 
-### 💰 Automated Payment System
+### Automated Payment System
 - **PayPal/Venmo Integration**: Seamless payment processing through MCP (Model Context Protocol)
 - **Safety Guards**: Comprehensive protection against accidental payments during development
 - **Real-time Transaction Tracking**: Complete audit trail of all payment activities
 - **Flexible Payment Methods**: Support for multiple payment platforms
 
-### 🔐 Enterprise-Grade Security
+### Enterprise-Grade Security
 - **Twilio Webhook Verification**: Cryptographic signature validation
 - **Rate Limiting**: Protection against abuse and spam
 - **Input Sanitization**: Comprehensive data validation and cleaning
 - **CSRF Protection**: Cross-site request forgery prevention
 - **Environment-Based Configuration**: Secure credential management
 
-### 📊 Admin Dashboard
+### Admin Dashboard
 - **Real-time Monitoring**: Live signup tracking and quota management
 - **Broadcast Messaging**: Bulk SMS notifications to participants
 - **Payment Testing**: Safe testing environment for payment flows
 - **Configuration Management**: Dynamic quota and contact management
 
-## 🛠 Technical Architecture
+## Technical Architecture
 
 ### Backend Framework
 - **Flask**: Lightweight, modular web framework
@@ -52,7 +52,7 @@ Weekly Skate streamlines the process of organizing weekly hockey games by automa
 - **Production Logging**: Comprehensive monitoring and debugging
 - **Docker Support**: Containerized deployment ready
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
 ```bash
@@ -84,7 +84,7 @@ python app.py
 gunicorn -c gunicorn.conf.py app:app
 ```
 
-## ⚙️ Configuration
+## Configuration
 
 The application uses environment variables for secure configuration management:
 
@@ -104,7 +104,7 @@ The application uses environment variables for secure configuration management:
 - `LOG_LEVEL`: Logging verbosity
 - `SENTRY_DSN`: Error monitoring
 
-## 🧠 NLP Engine Details
+## NLP Engine Details
 
 ### Confidence Scoring System
 - **Explicit Confirmations** (1.0): Clear "yes", "confirmed", "secured"
@@ -118,7 +118,7 @@ The application uses environment variables for secure configuration management:
 - **Sentiment Analysis**: Emotional context understanding
 - **Pattern Learning**: Adaptive response improvement
 
-## 🔒 Security Features
+## Security Features
 
 ### Production Security
 - **Webhook Signature Verification**: Cryptographic request validation
@@ -133,7 +133,7 @@ The application uses environment variables for secure configuration management:
 - **Error Handling**: Graceful failure management
 - **Rollback Capabilities**: Transaction reversal support
 
-## 📱 API Endpoints
+## API Endpoints
 
 ### Public Endpoints
 - `GET /` - Main signup interface
@@ -152,7 +152,7 @@ The application uses environment variables for secure configuration management:
 - `GET /payment/success` - Payment confirmation
 - `GET /payment/cancel` - Payment cancellation
 
-## 🧪 Testing
+## Testing
 
 ### Unit Tests
 ```bash
@@ -170,7 +170,7 @@ python test_mcp_venmo.py
 ngrok http 5000
 ```
 
-## 📈 Monitoring & Logging
+## Monitoring & Logging
 
 ### Application Logging
 - **Structured Logging**: JSON-formatted log entries
@@ -183,7 +183,7 @@ ngrok http 5000
 - **Exception Handling**: Graceful error recovery
 - **Alert System**: Critical issue notifications
 
-## 🚀 Deployment
+## Deployment
 
 ### Production Checklist
 - [ ] Environment variables configured
@@ -198,7 +198,7 @@ ngrok http 5000
 - **Caching Strategy**: Redis integration ready
 - **Load Balancing**: Nginx configuration included
 
-## 🤝 Contributing
+## Contributing
 
 This project demonstrates enterprise-level software development practices including:
 - Clean architecture and modular design
@@ -207,7 +207,7 @@ This project demonstrates enterprise-level software development practices includ
 - Production-ready deployment configuration
 - Advanced AI/ML integration patterns
 
-## 📄 License
+## License
 
 This project is private and proprietary. All rights reserved.
 
@@ -215,7 +215,7 @@ This project is private and proprietary. All rights reserved.
 
 **Note**: This application is designed for private use. The live deployment URL is not publicly accessible for security reasons. Demo credentials and sandbox environments are used for testing purposes.
 
-## 🏗 Architecture Highlights
+## Architecture Highlights
 
 ### Design Patterns
 - **Service Layer Pattern**: Clean business logic separation
